@@ -1,0 +1,6 @@
+.dapper
+.tmass
+*.swp
+bin/
+dist/
+tmux*

@@ -1,0 +1,26 @@
+{
+	"description": "GIT volume plugin for Docker",
+	"documentation": "https://github.com/kassisol/docker-volume-git",
+	"entrypoint": ["/docker-volume-git"],
+	"interface" : {
+		"types": ["docker.volumedriver/1.0"],
+		"socket": "gitvol.sock"
+	},
+	"linux": {
+		"capabilities": null
+	},
+	"mounts": [
+		{
+			"source": "/var/lib/docker/plugins",
+			"destination": "/var/lib/docker/state",
+			"type": "bind",
+			"options": [
+				"rbind"
+			]
+		}
+	],
+	"network": {
+		"type": "host"
+	},
+	"propagatedmount": "/var/lib/docker/volumes"
+}
