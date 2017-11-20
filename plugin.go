@@ -3,32 +3,52 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/juliengk/go-utils"
 	"github.com/juliengk/go-utils/filedir"
+	"github.com/kassisol/docker-volume-git/secret"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
 type gitVolume struct {
-	URL string
-	Ref string
+	URL  string
+	Ref  string
+	Auth auth
 
 	Mountpoint  string
 	connections int
 }
 
+type auth struct {
+	Type   string
+	Driver string
+	User   string
+	Pass   string
+	Config map[string]string
+}
+
 func (d *volumeDriver) Create(req volume.Request) volume.Response {
 	var res volume.Response
+	var secretDriver string
+
+	allowedAuthTypes := []string{
+		"anonymous",
+		"password",
+		"pubkey",
+	}
 
 	log.Infof("VolumeDriver.Create: volume %s", req.Name)
 
 	d.Lock()
 	defer d.Unlock()
 
-	_, ok := req.Options["url"]
-	if !ok {
+	if _, ok := req.Options["url"]; !ok {
 		res.Err = fmt.Sprintf("url option is mandatory")
 		return res
 	}
@@ -37,14 +57,87 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 		return res
 	}
 
+	authType := "anonymous"
+	if v, ok := req.Options["auth-type"]; ok {
+		authType = v
+	}
+
+	if !utils.StringInSlice(authType, allowedAuthTypes, false) {
+		res.Err = fmt.Sprintf("auth-type is not valid. Valid types are %s.", strings.Join(allowedAuthTypes, ", "))
+		return res
+	}
+
+	if authType != "anonymous" {
+		if _, ok := req.Options["auth-user"]; !ok {
+			res.Err = fmt.Sprintf("auth-user option should be set")
+			return res
+		}
+
+		secretDriver = "stdin"
+		if v, ok := req.Options["secret-driver"]; ok {
+			secretDriver = v
+		}
+
+		if secretDriver == "stdin" {
+			if _, ok := req.Options["auth-password"]; !ok {
+				res.Err = fmt.Sprintf("auth-password option should be set")
+				return res
+			}
+		} else {
+			if _, ok := req.Options["auth-password"]; ok {
+				res.Err = fmt.Sprintf("auth-password option should not be set if secret-driver option is different than 'stdin'")
+				return res
+			}
+		}
+	}
+
 	vol := gitVolume{
 		URL:        req.Options["url"],
+		Auth:       auth{Type: authType, Driver: secretDriver},
 		Mountpoint: d.getPath(req.Name),
 	}
 
-	_, ok = req.Options["ref"]
-	if ok {
+	if _, ok := req.Options["ref"]; ok {
 		vol.Ref = req.Options["ref"]
+	}
+
+	if authType != "anonymous" {
+		vol.Auth.User = req.Options["auth-user"]
+	}
+
+	if secretDriver == "stdin" {
+		vol.Auth.Pass = req.Options["auth-pass"]
+	} else {
+		configs := make(map[string]string)
+
+		optsSkip := []string{
+			"url",
+			"ref",
+			"auth-type",
+			"auth-user",
+			"secret-driver",
+		}
+
+		sec, err := secret.NewDriver(secretDriver)
+		if err != nil {
+			res.Err = err.Error()
+			return res
+		}
+
+		for k, v := range req.Options {
+			if !utils.StringInSlice(k, optsSkip, false) {
+				sec.AddKey(k, v)
+
+				configs[k] = v
+			}
+		}
+
+		if err := sec.ValidateKeys(); err != nil {
+			res.Err = err.Error()
+			return res
+		}
+
+		vol.Auth.Config = configs
 	}
 
 	if err := d.addVolume(req.Name, &vol); err != nil {
@@ -131,6 +224,7 @@ func (d *volumeDriver) Path(req volume.Request) volume.Response {
 
 func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 	var res volume.Response
+	var a gitssh.AuthMethod
 
 	log.Infof("VolumeDriver.Mount: volume %s", req.Name)
 
@@ -144,6 +238,44 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 	}
 
 	if v.connections == 0 {
+		if v.Auth.Type != "anonymous" {
+			var secr8 string
+
+			if v.Auth.Driver == "stdin" {
+				secr8 = v.Auth.Pass
+			} else {
+				sec, err := secret.NewDriver(v.Auth.Driver)
+				if err != nil {
+					res.Err = err.Error()
+					return res
+				}
+
+				for k, v := range v.Auth.Config {
+					sec.AddKey(k, v)
+				}
+
+				secr8, err = sec.GetSecret()
+				if err != nil {
+					res.Err = err.Error()
+					return res
+				}
+			}
+
+			if v.Auth.Type == "password" {
+				a = &gitssh.Password{User: v.Auth.User, Pass: secr8}
+			}
+
+			if v.Auth.Type == "pubkey" {
+				a, err = gitssh.NewPublicKeys(v.Auth.User, []byte(secr8), "")
+				if err != nil {
+					res.Err = err.Error()
+					return res
+				}
+			}
+
+			a.(*gitssh.PublicKeys).HostKeyCallback = ssh.InsecureIgnoreHostKey()
+		}
+
 		if err := filedir.CreateDirIfNotExist(v.Mountpoint, true, 0700); err != nil {
 			res.Err = err.Error()
 			return res
@@ -151,6 +283,9 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 
 		cloneOpts := &git.CloneOptions{
 			URL: v.URL,
+		}
+		if v.Auth.Driver != "anonymous" {
+			cloneOpts.Auth = a
 		}
 
 		if err := cloneOpts.Validate(); err != nil {

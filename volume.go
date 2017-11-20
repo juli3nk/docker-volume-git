@@ -20,16 +20,24 @@ type volumeDriver struct {
 	volumes   map[string]*gitVolume
 }
 
-func NewHandlerFromVolumeDriver(root string) *volume.Handler {
+func newHandlerFromVolumeDriver(root string) (*volume.Handler, error) {
 	d := &volumeDriver{
 		volPath:   path.Join(root, "volumes"),
 		statePath: path.Join(root, "state", "gitfs-state.json"),
 		volumes:   map[string]*gitVolume{},
 	}
 
+	if err := filedir.CreateDirIfNotExist(d.volPath, false, 0700); err != nil {
+		return nil, err
+	}
+
+	if err := filedir.CreateDirIfNotExist(d.statePath, false, 0700); err != nil {
+		return nil, err
+	}
+
 	d.loadState()
 
-	return volume.NewHandler(d)
+	return volume.NewHandler(d), nil
 }
 
 func (d *volumeDriver) loadState() error {
@@ -65,6 +73,8 @@ func (d *volumeDriver) addVolume(name string, vol *gitVolume) error {
 
 	d.volumes[name] = vol
 
+	d.saveState()
+
 	return nil
 }
 
@@ -83,6 +93,8 @@ func (d *volumeDriver) removeVolume(name string) error {
 	}
 
 	delete(d.volumes, name)
+
+	d.saveState()
 
 	return nil
 }

@@ -21,6 +21,10 @@ import (
 )
 
 func main() {
-	h := NewHandlerFromVolumeDriver("/var/lib/docker")
+	h, err := newHandlerFromVolumeDriver("/var/lib/docker")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	log.Fatal(h.ServeUnix("gitvol", 1))
 }
