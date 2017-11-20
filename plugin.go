@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/juliengk/go-utils"
 	"github.com/juliengk/go-utils/filedir"
 	"github.com/kassisol/docker-volume-git/secret"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"

@@ -9,12 +9,6 @@
 			"revisionTime": "2017-05-24T00:36:31Z"
 		},
 		{
-			"checksumSHA1": "usLrFBjAHucdTR1y3L/Qfs1QRFU=",
-			"path": "github.com/Sirupsen/logrus",
-			"revision": "68cec9f21fbf3ea8d8f98c044bc6ce05f17b267a",
-			"revisionTime": "2017-06-06T20:59:45Z"
-		},
-		{
 			"checksumSHA1": "RBwpnMpfQt7Jo7YWrRph0Vwe+f0=",
 			"path": "github.com/coreos/go-systemd/activation",
 			"revision": "1f9909e51b2dab2487c26d64c8f2e7e580e4c9f5",
@@ -195,6 +189,12 @@
 			"revisionTime": "2017-09-19T13:57:42Z"
 		},
 		{
+			"checksumSHA1": "pOsyzLxA9jL375TDmbDdsgiMPl8=",
+			"path": "github.com/sirupsen/logrus",
+			"revision": "95cd2b9c79aa5e72ab0bc69b7ccc2be15bf850f6",
+			"revisionTime": "2017-11-18T12:42:23Z"
+		},
+		{
 			"checksumSHA1": "8QeSG127zQqbA+YfkO1WkKx/iUI=",
 			"path": "github.com/src-d/gcfg",
 			"revision": "f187355171c936ac84a82793659ebb4936bc1c23",
@@ -255,6 +255,12 @@
 			"revisionTime": "2017-06-03T05:13:44Z"
 		},
 		{
+			"checksumSHA1": "5Yb2z6UO+Arm/TEd+OEtdnwOt1A=",
+			"path": "golang.org/x/crypto/ssh/terminal",
+			"revision": "9f005a07e0d31d45e6656d241bb5c0f2efd4bc94",
+			"revisionTime": "2017-09-21T17:41:56Z"
+		},
+		{
 			"checksumSHA1": "RhpmDgSgY6ZyJbkksQSOHbwsTQw=",
 			"path": "golang.org/x/net/http2",
 			"revision": "9dfe39835686865bff950a07b394c12a98ddc811",
@@ -285,16 +291,16 @@
 			"revisionTime": "2017-06-03T08:13:02Z"
 		},
 		{
-			"checksumSHA1": "fSpQ1X/1tpkN80Ceba8KseGeVu8=",
+			"checksumSHA1": "wpWClDus8W+4nf59NoxJY5Omz6M=",
 			"path": "golang.org/x/sys/unix",
-			"revision": "b9e8d468b01f806830d387bd9a1fe96dc68129d1",
-			"revisionTime": "2017-06-07T10:07:34Z"
+			"revision": "328643532ee3c60c099171d4ce2cad0ca0354ca9",
+			"revisionTime": "2017-11-16T10:19:09Z"
 		},
 		{
-			"checksumSHA1": "2Coyr3Bq1dPkFg+ZYHEq1+/Rn58=",
+			"checksumSHA1": "cQoW6a5F9mbu10APPXM39YJtv48=",
 			"path": "golang.org/x/sys/windows",
-			"revision": "b9e8d468b01f806830d387bd9a1fe96dc68129d1",
-			"revisionTime": "2017-06-07T10:07:34Z"
+			"revision": "328643532ee3c60c099171d4ce2cad0ca0354ca9",
+			"revisionTime": "2017-11-16T10:19:09Z"
 		},
 		{
 			"checksumSHA1": "tltivJ/uj/lqLk05IqGfCv2F/E8=",
