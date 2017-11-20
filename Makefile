@@ -27,7 +27,7 @@ ifndef TMUX
 	$(error "tmux is not available, please install it")
 endif
 
-	./.tmass load -l scripts/dev/tmux/ gitvol
+	./.tmass load -l scripts/dev/tmux/ git
 	tmux a -d -t gitvol
 
 help:
