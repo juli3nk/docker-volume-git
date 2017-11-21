@@ -29,7 +29,6 @@ type auth struct {
 	Type   string
 	Driver string
 	User   string
-	Pass   string
 	Config map[string]string
 }
 
@@ -41,6 +40,14 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 		"anonymous",
 		"password",
 		"pubkey",
+	}
+
+	optsSkip := []string{
+		"url",
+		"ref",
+		"auth-type",
+		"auth-user",
+		"secret-driver",
 	}
 
 	log.Infof("VolumeDriver.Create: volume %s", req.Name)
@@ -77,18 +84,6 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 		if v, ok := req.Options["secret-driver"]; ok {
 			secretDriver = v
 		}
-
-		if secretDriver == "stdin" {
-			if _, ok := req.Options["auth-password"]; !ok {
-				res.Err = fmt.Sprintf("auth-password option should be set")
-				return res
-			}
-		} else {
-			if _, ok := req.Options["auth-password"]; ok {
-				res.Err = fmt.Sprintf("auth-password option should not be set if secret-driver option is different than 'stdin'")
-				return res
-			}
-		}
 	}
 
 	vol := gitVolume{
@@ -105,40 +100,28 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 		vol.Auth.User = req.Options["auth-user"]
 	}
 
-	if secretDriver == "stdin" {
-		vol.Auth.Pass = req.Options["auth-pass"]
-	} else {
-		configs := make(map[string]string)
+	configs := make(map[string]string)
 
-		optsSkip := []string{
-			"url",
-			"ref",
-			"auth-type",
-			"auth-user",
-			"secret-driver",
-		}
-
-		sec, err := secret.NewDriver(secretDriver)
-		if err != nil {
-			res.Err = err.Error()
-			return res
-		}
-
-		for k, v := range req.Options {
-			if !utils.StringInSlice(k, optsSkip, false) {
-				sec.AddKey(k, v)
-
-				configs[k] = v
-			}
-		}
-
-		if err := sec.ValidateKeys(); err != nil {
-			res.Err = err.Error()
-			return res
-		}
-
-		vol.Auth.Config = configs
+	sec, err := secret.NewDriver(secretDriver)
+	if err != nil {
+		res.Err = err.Error()
+		return res
 	}
+
+	for k, v := range req.Options {
+		if !utils.StringInSlice(k, optsSkip, false) {
+			sec.AddKey(k, v)
+
+			configs[k] = v
+		}
+	}
+
+	if err := sec.ValidateKeys(); err != nil {
+		res.Err = err.Error()
+		return res
+	}
+
+	vol.Auth.Config = configs
 
 	if err := d.addVolume(req.Name, &vol); err != nil {
 		res.Err = err.Error()
@@ -243,26 +226,20 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 		}
 
 		if v.Auth.Type != "anonymous" {
-			var secr8 string
+			sec, err := secret.NewDriver(v.Auth.Driver)
+			if err != nil {
+				res.Err = err.Error()
+				return res
+			}
 
-			if v.Auth.Driver == "stdin" {
-				secr8 = v.Auth.Pass
-			} else {
-				sec, err := secret.NewDriver(v.Auth.Driver)
-				if err != nil {
-					res.Err = err.Error()
-					return res
-				}
+			for k, v := range v.Auth.Config {
+				sec.AddKey(k, v)
+			}
 
-				for k, v := range v.Auth.Config {
-					sec.AddKey(k, v)
-				}
-
-				secr8, err = sec.GetSecret()
-				if err != nil {
-					res.Err = err.Error()
-					return res
-				}
+			secr8, err := sec.GetSecret()
+			if err != nil {
+				res.Err = err.Error()
+				return res
 			}
 
 			if v.Auth.Type == "password" {
