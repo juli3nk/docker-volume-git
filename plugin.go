@@ -238,6 +238,10 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 	}
 
 	if v.connections == 0 {
+		cloneOpts := &git.CloneOptions{
+			URL: v.URL,
+		}
+
 		if v.Auth.Type != "anonymous" {
 			var secr8 string
 
@@ -274,18 +278,12 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 			}
 
 			a.(*gitssh.PublicKeys).HostKeyCallback = ssh.InsecureIgnoreHostKey()
+			cloneOpts.Auth = a
 		}
 
 		if err := filedir.CreateDirIfNotExist(v.Mountpoint, true, 0700); err != nil {
 			res.Err = err.Error()
 			return res
-		}
-
-		cloneOpts := &git.CloneOptions{
-			URL: v.URL,
-		}
-		if v.Auth.Driver != "anonymous" {
-			cloneOpts.Auth = a
 		}
 
 		if err := cloneOpts.Validate(); err != nil {
