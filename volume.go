@@ -58,11 +58,7 @@ func (d *volumeDriver) loadState() error {
 func (d *volumeDriver) saveState() error {
 	data := json.Encode(d.volumes)
 
-	if err := ioutil.WriteFile(d.statePath, data.Bytes(), 0644); err != nil {
-		return err
-	}
-
-	return nil
+	return ioutil.WriteFile(d.statePath, data.Bytes(), 0644)
 }
 
 func (d *volumeDriver) addVolume(name string, vol *gitVolume) error {
