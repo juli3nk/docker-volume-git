@@ -1,11 +1,11 @@
-package secret
+package libsecret
 
 import (
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/kassisol/docker-volume-git/secret/driver"
+	"github.com/kassisol/libsecret/driver"
 )
 
 type Initialize func() (driver.Secreter, error)

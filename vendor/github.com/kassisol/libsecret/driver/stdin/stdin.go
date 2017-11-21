@@ -1,12 +1,12 @@
-package vault
+package stdin
 
 import (
-	"github.com/kassisol/docker-volume-git/secret"
-	"github.com/kassisol/docker-volume-git/secret/driver"
+	"github.com/kassisol/libsecret"
+	"github.com/kassisol/libsecret/driver"
 )
 
 func init() {
-	secret.RegisterDriver("vault", New)
+	libsecret.RegisterDriver("stdin", New)
 }
 
 type Config struct {

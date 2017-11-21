@@ -8,7 +8,7 @@ import (
 	"github.com/docker/go-plugins-helpers/volume"
 	"github.com/juliengk/go-utils"
 	"github.com/juliengk/go-utils/filedir"
-	"github.com/kassisol/docker-volume-git/secret"
+	"github.com/kassisol/libsecret"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-git.v4"
@@ -102,7 +102,7 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 
 	configs := make(map[string]string)
 
-	sec, err := secret.NewDriver(secretDriver)
+	sec, err := libsecret.NewDriver(secretDriver)
 	if err != nil {
 		res.Err = err.Error()
 		return res
@@ -226,7 +226,7 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 		}
 
 		if v.Auth.Type != "anonymous" {
-			sec, err := secret.NewDriver(v.Auth.Driver)
+			sec, err := libsecret.NewDriver(v.Auth.Driver)
 			if err != nil {
 				res.Err = err.Error()
 				return res
