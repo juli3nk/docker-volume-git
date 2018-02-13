@@ -54,6 +54,7 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 
 	supportedTransportSchemes := []string{
 		"http",
+		"https",
 		"ssh",
 	}
 
@@ -265,7 +266,7 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 				return res
 			}
 
-			if u.Scheme == "http" {
+			if u.Scheme == "http" || u.Scheme == "https" {
 				a := &githttp.BasicAuth{Username: v.Auth.User, Password: secr8}
 				cloneOpts.Auth = a
 			}
