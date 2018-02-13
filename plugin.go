@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
+	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
 	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
@@ -50,6 +52,11 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 		"secret-driver",
 	}
 
+	supportedTransportSchemes := []string{
+		"http",
+		"ssh",
+	}
+
 	log.Infof("VolumeDriver.Create: volume %s", req.Name)
 
 	d.Lock()
@@ -61,6 +68,17 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 	}
 	if len(req.Options["url"]) == 0 {
 		res.Err = fmt.Sprintf("url cannot be empty")
+		return res
+	}
+
+	u, err := url.Parse(req.Options["url"])
+	if err != nil {
+		res.Err = err.Error()
+		return res
+	}
+
+	if !utils.StringInSlice(u.Scheme, supportedTransportSchemes, false) {
+		res.Err = fmt.Sprintf("url transport scheme is not valid. Valid types are %s.", strings.Join(supportedTransportSchemes, ", "))
 		return res
 	}
 
@@ -207,7 +225,6 @@ func (d *volumeDriver) Path(req volume.Request) volume.Response {
 
 func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 	var res volume.Response
-	var a gitssh.AuthMethod
 
 	log.Infof("VolumeDriver.Mount: volume %s", req.Name)
 
@@ -242,20 +259,35 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 				return res
 			}
 
-			if v.Auth.Type == "password" {
-				a = &gitssh.Password{User: v.Auth.User, Pass: secr8}
+			u, err := url.Parse(v.URL)
+			if err != nil {
+				res.Err = err.Error()
+				return res
 			}
 
-			if v.Auth.Type == "pubkey" {
-				a, err = gitssh.NewPublicKeys(v.Auth.User, []byte(secr8), "")
-				if err != nil {
-					res.Err = err.Error()
-					return res
+			if u.Scheme == "http" {
+				a := &githttp.BasicAuth{Username: v.Auth.User, Password: secr8}
+				cloneOpts.Auth = a
+			}
+
+			if u.Scheme == "ssh" {
+				var a gitssh.AuthMethod
+
+				if v.Auth.Type == "password" {
+					a = &gitssh.Password{User: v.Auth.User, Password: secr8}
 				}
-			}
 
-			a.(*gitssh.PublicKeys).HostKeyCallback = ssh.InsecureIgnoreHostKey()
-			cloneOpts.Auth = a
+				if v.Auth.Type == "pubkey" {
+					a, err = gitssh.NewPublicKeys(v.Auth.User, []byte(secr8), "")
+					if err != nil {
+						res.Err = err.Error()
+						return res
+					}
+				}
+
+				a.(*gitssh.PublicKeys).HostKeyCallback = ssh.InsecureIgnoreHostKey()
+				cloneOpts.Auth = a
+			}
 		}
 
 		if err := filedir.CreateDirIfNotExist(v.Mountpoint, true, 0700); err != nil {

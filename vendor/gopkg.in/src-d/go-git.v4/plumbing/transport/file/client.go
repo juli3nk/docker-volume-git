@@ -2,8 +2,13 @@
 package file
 
 import (
+	"bufio"
+	"errors"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/src-d/go-git.v4/plumbing/transport"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/internal/common"
@@ -29,7 +34,48 @@ func NewClient(uploadPackBin, receivePackBin string) transport.Transport {
 	})
 }
 
-func (r *runner) Command(cmd string, ep transport.Endpoint, auth transport.AuthMethod) (common.Command, error) {
+func prefixExecPath(cmd string) (string, error) {
+	// Use `git --exec-path` to find the exec path.
+	execCmd := exec.Command("git", "--exec-path")
+
+	stdout, err := execCmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stdoutBuf := bufio.NewReader(stdout)
+
+	err = execCmd.Start()
+	if err != nil {
+		return "", err
+	}
+
+	execPathBytes, isPrefix, err := stdoutBuf.ReadLine()
+	if err != nil {
+		return "", err
+	}
+	if isPrefix {
+		return "", errors.New("Couldn't read exec-path line all at once")
+	}
+
+	err = execCmd.Wait()
+	if err != nil {
+		return "", err
+	}
+	execPath := string(execPathBytes)
+	execPath = strings.TrimSpace(execPath)
+	cmd = filepath.Join(execPath, cmd)
+
+	// Make sure it actually exists.
+	_, err = exec.LookPath(cmd)
+	if err != nil {
+		return "", err
+	}
+	return cmd, nil
+}
+
+func (r *runner) Command(cmd string, ep *transport.Endpoint, auth transport.AuthMethod,
+) (common.Command, error) {
+
 	switch cmd {
 	case transport.UploadPackServiceName:
 		cmd = r.UploadPackBin
@@ -37,16 +83,25 @@ func (r *runner) Command(cmd string, ep transport.Endpoint, auth transport.AuthM
 		cmd = r.ReceivePackBin
 	}
 
-	if _, err := exec.LookPath(cmd); err != nil {
-		return nil, err
+	_, err := exec.LookPath(cmd)
+	if err != nil {
+		if e, ok := err.(*exec.Error); ok && e.Err == exec.ErrNotFound {
+			cmd, err = prefixExecPath(cmd)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
-	return &command{cmd: exec.Command(cmd, ep.Path())}, nil
+	return &command{cmd: exec.Command(cmd, ep.Path)}, nil
 }
 
 type command struct {
-	cmd    *exec.Cmd
-	closed bool
+	cmd          *exec.Cmd
+	stderrCloser io.Closer
+	closed       bool
 }
 
 func (c *command) Start() error {
@@ -54,7 +109,12 @@ func (c *command) Start() error {
 }
 
 func (c *command) StderrPipe() (io.Reader, error) {
-	return c.cmd.StderrPipe()
+	// Pipe returned by Command.StderrPipe has a race with Read + Command.Wait.
+	// We use an io.Pipe and close it after the command finishes.
+	r, w := io.Pipe()
+	c.cmd.Stderr = w
+	c.stderrCloser = r
+	return r, nil
 }
 
 func (c *command) StdinPipe() (io.WriteCloser, error) {
@@ -65,16 +125,32 @@ func (c *command) StdoutPipe() (io.Reader, error) {
 	return c.cmd.StdoutPipe()
 }
 
+func (c *command) Kill() error {
+	c.cmd.Process.Kill()
+	return c.Close()
+}
+
 // Close waits for the command to exit.
 func (c *command) Close() error {
 	if c.closed {
 		return nil
 	}
 
-	return c.cmd.Process.Kill()
-}
+	defer func() {
+		c.closed = true
+		_ = c.stderrCloser.Close()
 
-func (c *command) Wait() error {
-	defer func() { c.closed = true }()
-	return c.cmd.Wait()
+	}()
+
+	err := c.cmd.Wait()
+	if _, ok := err.(*os.PathError); ok {
+		return nil
+	}
+
+	// When a repository does not exist, the command exits with code 128.
+	if _, ok := err.(*exec.ExitError); ok {
+		return nil
+	}
+
+	return err
 }

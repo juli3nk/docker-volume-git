@@ -15,15 +15,16 @@ const (
 	symrefPrefix    = "ref: "
 )
 
-var (
-	refPrefixes = []string{
-		refHeadPrefix,
-		refTagPrefix,
-		refRemotePrefix,
-		refNotePrefix,
-		refPrefix,
-	}
-)
+// RefRevParseRules are a set of rules to parse references into short names.
+// These are the same rules as used by git in shorten_unambiguous_ref.
+// See: https://github.com/git/git/blob/e0aaa1b6532cfce93d87af9bc813fb2e7a7ce9d7/refs.c#L417
+var RefRevParseRules = []string{
+	"refs/%s",
+	"refs/tags/%s",
+	"refs/heads/%s",
+	"refs/remotes/%s",
+	"refs/remotes/%s/HEAD",
+}
 
 var (
 	ErrReferenceNotFound = errors.New("reference not found")
@@ -54,23 +55,42 @@ func (r ReferenceType) String() string {
 // ReferenceName reference name's
 type ReferenceName string
 
+// IsBranch check if a reference is a branch
+func (r ReferenceName) IsBranch() bool {
+	return strings.HasPrefix(string(r), refHeadPrefix)
+}
+
+// IsNote check if a reference is a note
+func (r ReferenceName) IsNote() bool {
+	return strings.HasPrefix(string(r), refNotePrefix)
+}
+
+// IsRemote check if a reference is a remote
+func (r ReferenceName) IsRemote() bool {
+	return strings.HasPrefix(string(r), refRemotePrefix)
+}
+
+// IsTag check if a reference is a tag
+func (r ReferenceName) IsTag() bool {
+	return strings.HasPrefix(string(r), refTagPrefix)
+}
+
 func (r ReferenceName) String() string {
 	return string(r)
 }
 
 // Short returns the short name of a ReferenceName
 func (r ReferenceName) Short() string {
-	return r.removeRefPrefix()
-}
-
-// Instead of hardcoding a number of components, we should remove the prefixes
-// refHeadPrefix, refTagPrefix, refRemotePrefix, refNotePrefix and refPrefix
-func (r ReferenceName) removeRefPrefix() string {
 	s := string(r)
-	for _, prefix := range refPrefixes {
-		s = strings.TrimPrefix(s, prefix)
+	res := s
+	for _, format := range RefRevParseRules {
+		_, err := fmt.Sscanf(s, format, &res)
+		if err == nil {
+			continue
+		}
 	}
-	return s
+
+	return res
 }
 
 const (
@@ -136,26 +156,6 @@ func (r *Reference) Hash() Hash {
 // Target return the target of a symbolic reference
 func (r *Reference) Target() ReferenceName {
 	return r.target
-}
-
-// IsBranch check if a reference is a branch
-func (r *Reference) IsBranch() bool {
-	return strings.HasPrefix(string(r.n), refHeadPrefix)
-}
-
-// IsNote check if a reference is a note
-func (r *Reference) IsNote() bool {
-	return strings.HasPrefix(string(r.n), refNotePrefix)
-}
-
-// IsRemote check if a reference is a remote
-func (r *Reference) IsRemote() bool {
-	return strings.HasPrefix(string(r.n), refRemotePrefix)
-}
-
-// IsTag check if a reference is a tag
-func (r *Reference) IsTag() bool {
-	return strings.HasPrefix(string(r.n), refTagPrefix)
 }
 
 // Strings dump a reference as a [2]string

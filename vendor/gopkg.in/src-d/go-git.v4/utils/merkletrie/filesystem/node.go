@@ -3,12 +3,13 @@ package filesystem
 import (
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 
-	"gopkg.in/src-d/go-billy.v2"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/utils/merkletrie/noder"
+
+	"gopkg.in/src-d/go-billy.v4"
 )
 
 var ignore = map[string]bool{
@@ -53,7 +54,7 @@ func (n *node) Hash() []byte {
 }
 
 func (n *node) Name() string {
-	return filepath.Base(n.path)
+	return path.Base(n.path)
 }
 
 func (n *node) IsDir() bool {
@@ -77,6 +78,10 @@ func (n *node) NumChildren() (int, error) {
 }
 
 func (n *node) calculateChildren() error {
+	if !n.IsDir() {
+		return nil
+	}
+
 	if len(n.children) != 0 {
 		return nil
 	}
@@ -106,8 +111,8 @@ func (n *node) calculateChildren() error {
 	return nil
 }
 
-func (n *node) newChildNode(file billy.FileInfo) (*node, error) {
-	path := filepath.Join(n.path, file.Name())
+func (n *node) newChildNode(file os.FileInfo) (*node, error) {
+	path := path.Join(n.path, file.Name())
 
 	hash, err := n.calculateHash(path, file)
 	if err != nil {
@@ -131,20 +136,20 @@ func (n *node) newChildNode(file billy.FileInfo) (*node, error) {
 	return node, nil
 }
 
-func (n *node) calculateHash(path string, file billy.FileInfo) ([]byte, error) {
+func (n *node) calculateHash(path string, file os.FileInfo) ([]byte, error) {
 	if file.IsDir() {
 		return make([]byte, 24), nil
 	}
 
-	f, err := n.fs.Open(path)
-	if err != nil {
-		return nil, err
+	var hash plumbing.Hash
+	var err error
+	if file.Mode()&os.ModeSymlink != 0 {
+		hash, err = n.doCalculateHashForSymlink(path, file)
+	} else {
+		hash, err = n.doCalculateHashForRegular(path, file)
 	}
 
-	defer f.Close()
-
-	h := plumbing.NewHasher(plumbing.BlobObject, file.Size())
-	if _, err := io.Copy(h, f); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -153,8 +158,37 @@ func (n *node) calculateHash(path string, file billy.FileInfo) ([]byte, error) {
 		return nil, err
 	}
 
-	hash := h.Sum()
 	return append(hash[:], mode.Bytes()...), nil
+}
+
+func (n *node) doCalculateHashForRegular(path string, file os.FileInfo) (plumbing.Hash, error) {
+	f, err := n.fs.Open(path)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	defer f.Close()
+
+	h := plumbing.NewHasher(plumbing.BlobObject, file.Size())
+	if _, err := io.Copy(h, f); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return h.Sum(), nil
+}
+
+func (n *node) doCalculateHashForSymlink(path string, file os.FileInfo) (plumbing.Hash, error) {
+	target, err := n.fs.Readlink(path)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	h := plumbing.NewHasher(plumbing.BlobObject, file.Size())
+	if _, err := h.Write([]byte(target)); err != nil {
+		return plumbing.ZeroHash, err
+	}
+
+	return h.Sum(), nil
 }
 
 func (n *node) String() string {

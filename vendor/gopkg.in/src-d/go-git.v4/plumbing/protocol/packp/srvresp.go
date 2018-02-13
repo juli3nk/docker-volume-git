@@ -1,6 +1,7 @@
 package packp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -18,8 +19,8 @@ type ServerResponse struct {
 }
 
 // Decode decodes the response into the struct, isMultiACK should be true, if
-// the request was done with multi_ack or multi_ack_detailed capabilities
-func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
+// the request was done with multi_ack or multi_ack_detailed capabilities.
+func (r *ServerResponse) Decode(reader *bufio.Reader, isMultiACK bool) error {
 	// TODO: implement support for multi_ack or multi_ack_detailed responses
 	if isMultiACK {
 		return errors.New("multi_ack and multi_ack_detailed are not supported")
@@ -34,7 +35,15 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 			return err
 		}
 
-		if !isMultiACK {
+		// we need to detect when the end of a response header and the beginning
+		// of a packfile header happened, some requests to the git daemon
+		// produces a duplicate ACK header even when multi_ack is not supported.
+		stop, err := r.stopReading(reader)
+		if err != nil {
+			return err
+		}
+
+		if stop {
 			break
 		}
 	}
@@ -42,16 +51,50 @@ func (r *ServerResponse) Decode(reader io.Reader, isMultiACK bool) error {
 	return s.Err()
 }
 
+// stopReading detects when a valid command such as ACK or NAK is found to be
+// read in the buffer without moving the read pointer.
+func (r *ServerResponse) stopReading(reader *bufio.Reader) (bool, error) {
+	ahead, err := reader.Peek(7)
+	if err == io.EOF {
+		return true, nil
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	if len(ahead) > 4 && r.isValidCommand(ahead[0:3]) {
+		return false, nil
+	}
+
+	if len(ahead) == 7 && r.isValidCommand(ahead[4:]) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (r *ServerResponse) isValidCommand(b []byte) bool {
+	commands := [][]byte{ack, nak}
+	for _, c := range commands {
+		if bytes.Equal(b, c) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (r *ServerResponse) decodeLine(line []byte) error {
 	if len(line) == 0 {
 		return fmt.Errorf("unexpected flush")
 	}
 
-	if bytes.Compare(line[0:3], ack) == 0 {
+	if bytes.Equal(line[0:3], ack) {
 		return r.decodeACKLine(line)
 	}
 
-	if bytes.Compare(line[0:3], nak) == 0 {
+	if bytes.Equal(line[0:3], nak) {
 		return nil
 	}
 
