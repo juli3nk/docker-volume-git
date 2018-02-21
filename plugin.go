@@ -117,30 +117,30 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 
 	if authType != "anonymous" {
 		vol.Auth.User = req.Options["auth-user"]
-	}
 
-	configs := make(map[string]string)
+		configs := make(map[string]string)
 
-	sec, err := libsecret.NewDriver(secretDriver)
-	if err != nil {
-		res.Err = err.Error()
-		return res
-	}
-
-	for k, v := range req.Options {
-		if !utils.StringInSlice(k, optsSkip, false) {
-			sec.AddKey(k, v)
-
-			configs[k] = v
+		sec, err := libsecret.NewDriver(secretDriver)
+		if err != nil {
+			res.Err = err.Error()
+			return res
 		}
-	}
 
-	if err := sec.ValidateKeys(); err != nil {
-		res.Err = err.Error()
-		return res
-	}
+		for k, v := range req.Options {
+			if !utils.StringInSlice(k, optsSkip, false) {
+				sec.AddKey(k, v)
 
-	vol.Auth.Config = configs
+				configs[k] = v
+			}
+		}
+
+		if err := sec.ValidateKeys(); err != nil {
+			res.Err = err.Error()
+			return res
+		}
+
+		vol.Auth.Config = configs
+	}
 
 	if err := d.addVolume(req.Name, &vol); err != nil {
 		res.Err = err.Error()
