@@ -33,7 +33,7 @@ ARG ARCH=${HOST_ARCH}
 
 ARG APP_REPO=kassisol
 
-ARG DOCKER_VERSION=17.09.0
+ARG DOCKER_VERSION=17.12.0
 
 ARG DOCKER_URL_amd64=https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}-ce.tgz
 
@@ -51,7 +51,9 @@ ENV PATH=/go/bin:/usr/local/go/bin:$PATH
 
 # Install Docker
 RUN curl -sfL ${DOCKER_URL} | tar -xzC /usr/local/src \
-	&& cp /usr/local/src/docker/docker* /usr/bin/
+	&& cp /usr/local/src/docker/docker* /usr/bin/ \
+	&& mkdir -p /var/lib/docker/volumes \
+	&& mkdir -p /var/lib/docker/state
 
 # Install Go
 RUN curl -sfL https://storage.googleapis.com/golang/go${GO_VERSION}.linux-amd64.tar.gz | tar -xzC /usr/local
