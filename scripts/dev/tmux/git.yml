@@ -1,8 +1,0 @@
-name: gitvol
-windows:
-  - name: shell
-    layout: main-vertical
-    panes:
-      - ./.dapper -f Dockerfile.dev -m bind -s
-      - while [ -z "$IMAGE_ID" ]; do IMAGE_ID=`docker container ls -f "name=docker-volume-git_dev" -q`; done && docker container exec -ti $IMAGE_ID bash -l
-      - while [ -z "$IMAGE_ID" ]; do IMAGE_ID=`docker container ls -f "name=docker-volume-git_dev" -q`; done && docker container exec -ti $IMAGE_ID bash -l
