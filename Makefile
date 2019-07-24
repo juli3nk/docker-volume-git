@@ -1,41 +1,53 @@
-TARGETS := $(shell ls scripts | grep -vE 'clean|dev|help|release')
+PLUGIN_NAME = kassisol/docker-volume-git
+PLUGIN_TAG ?= latest
+DEV_IMAGE_NAME = juliengk/dev:go
 
-TMUX := $(shell command -v tmux 2> /dev/null)
+.PHONY: all
+all: clean rootfs create
 
-.dapper:
-	@echo Downloading dapper
-	@curl -sL https://releases.rancher.com/dapper/latest/dapper-`uname -s`-`uname -m|sed 's/v7l//'` > .dapper.tmp
-	@@chmod +x .dapper.tmp
-	@./.dapper.tmp -v
-	@mv .dapper.tmp .dapper
-
-.tmass:
-	@echo Downloading tmass
-	@curl -sL https://github.com/juliengk/tmass/releases/download/0.3.0/tmass -o .tmass.tmp
-	@@chmod +x .tmass.tmp
-	@./.tmass.tmp version
-	@mv .tmass.tmp .tmass
-
-$(TARGETS): .dapper
-	./.dapper $@
-
+.PHONY: clean
 clean:
-	@./scripts/clean
+	@echo "### rm ./build"
+	@rm -rf ./build
 
-dev: .dapper .tmass
-ifndef TMUX
-	$(error "tmux is not available, please install it")
-endif
+.PHONY: dev
+dev:
+	docker container run -ti --rm --mount type=bind,src=$$PWD,dst=/go/src/github.com/${PLUGIN_NAME} --workdir /go/src/github.com/${PLUGIN_NAME} --name docker-volume-git-dev ${DEV_IMAGE_NAME}
 
-	./.tmass load -l scripts/dev/tmux/ git
-	tmux a -d -t gitvol
+.PHONY: config
+config:
+	@echo "### copy config.json to ./build/"
+	@mkdir -p ./build
+	@cp config.json ./build/
 
-help:
-	@./scripts/help
+.PHONY: rootfs
+rootfs: config
+	@echo "### docker build: rootfs image with"
+	@docker image build -t ${PLUGIN_NAME}:rootfs .
+	@echo "### create rootfs directory in ./build/rootfs"
+	@mkdir -p ./build/rootfs
+	@docker create --name tmp ${PLUGIN_NAME}:rootfs
+	@docker export tmp | tar -x -C ./build/rootfs
+	@docker rm -vf tmp
 
-release:
-	./scripts/release
+.PHONY: create
+create:
+	@echo "### remove existing plugin ${PLUGIN_NAME}:${PLUGIN_TAG} if exists"
+	@docker plugin rm -f ${PLUGIN_NAME}:${PLUGIN_TAG} || true
+	@echo "### create new plugin ${PLUGIN_NAME}:${PLUGIN_TAG} from ./build"
+	@docker plugin create ${PLUGIN_NAME}:${PLUGIN_TAG} ./build
 
-.DEFAULT_GOAL := ci
+.PHONY: enable
+enable:
+	@echo "### enable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
 
-.PHONY: .dapper .tmass $(TARGETS) clean dev help release
+.PHONY: disable
+disable:
+	@echo "### disable plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker plugin disable ${PLUGIN_NAME}:${PLUGIN_TAG}
+
+.PHONY: push
+push:  clean rootfs create enable
+	@echo "### push plugin ${PLUGIN_NAME}:${PLUGIN_TAG}"
+	@docker plugin push ${PLUGIN_NAME}:${PLUGIN_TAG}
