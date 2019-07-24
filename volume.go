@@ -21,19 +21,23 @@ type volumeDriver struct {
 }
 
 func newHandlerFromVolumeDriver(root string) (*volume.Handler, error) {
+	stateDir := path.Join(root, "state")
+
 	d := &volumeDriver{
 		volPath:   path.Join(root, "volumes"),
-		statePath: path.Join(root, "state", "gitfs-state.json"),
+		statePath: path.Join(stateDir, "gitfs-state.json"),
 		volumes:   map[string]*gitVolume{},
 	}
 
+	/*
 	if err := filedir.CreateDirIfNotExist(d.volPath, false, 0700); err != nil {
 		return nil, err
 	}
 
-	if err := filedir.CreateDirIfNotExist(d.statePath, false, 0700); err != nil {
+	if err := filedir.CreateDirIfNotExist(stateDir, false, 0700); err != nil {
 		return nil, err
 	}
+	*/
 
 	d.loadState()
 

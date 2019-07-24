@@ -1,4 +1,5 @@
-PLUGIN_NAME = kassisol/docker-volume-git
+REPO_NAME = kassisol/docker-volume-git
+PLUGIN_NAME = kassisol/gitvol
 PLUGIN_TAG ?= latest
 DEV_IMAGE_NAME = juliengk/dev:go
 
@@ -12,7 +13,7 @@ clean:
 
 .PHONY: dev
 dev:
-	docker container run -ti --rm --mount type=bind,src=$$PWD,dst=/go/src/github.com/${PLUGIN_NAME} --workdir /go/src/github.com/${PLUGIN_NAME} --name docker-volume-git-dev ${DEV_IMAGE_NAME}
+	docker container run -ti --rm --mount type=bind,src=$$PWD,dst=/go/src/github.com/${REPO_NAME} --workdir /go/src/github.com/${REPO_NAME} --name docker-volume-git-dev ${DEV_IMAGE_NAME}
 
 .PHONY: config
 config:

@@ -7,15 +7,11 @@ import (
 	"strings"
 
 	"github.com/docker/go-plugins-helpers/volume"
+	"github.com/juliengk/go-git"
 	"github.com/juliengk/go-utils"
 	"github.com/juliengk/go-utils/filedir"
 	"github.com/kassisol/libsecret"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	githttp "gopkg.in/src-d/go-git.v4/plumbing/transport/http"
-	gitssh "gopkg.in/src-d/go-git.v4/plumbing/transport/ssh"
 )
 
 type gitVolume struct {
@@ -34,14 +30,14 @@ type auth struct {
 	Config map[string]string
 }
 
-func (d *volumeDriver) Create(req volume.Request) volume.Response {
-	var res volume.Response
+func (d *volumeDriver) Create(req *volume.CreateRequest) error {
 	var secretDriver string
 
 	allowedAuthTypes := []string{
 		"anonymous",
 		"password",
 		"pubkey",
+		"token",
 	}
 
 	optsSkip := []string{
@@ -64,23 +60,19 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 	defer d.Unlock()
 
 	if _, ok := req.Options["url"]; !ok {
-		res.Err = fmt.Sprintf("url option is mandatory")
-		return res
+		return fmt.Errorf("url option is mandatory")
 	}
 	if len(req.Options["url"]) == 0 {
-		res.Err = fmt.Sprintf("url cannot be empty")
-		return res
+		return fmt.Errorf("url cannot be empty")
 	}
 
 	u, err := url.Parse(req.Options["url"])
 	if err != nil {
-		res.Err = err.Error()
-		return res
+		return err
 	}
 
 	if !utils.StringInSlice(u.Scheme, supportedTransportSchemes, false) {
-		res.Err = fmt.Sprintf("url transport scheme is not valid. Valid types are %s.", strings.Join(supportedTransportSchemes, ", "))
-		return res
+		return fmt.Errorf("url transport scheme is not valid. Valid types are %s.", strings.Join(supportedTransportSchemes, ", "))
 	}
 
 	authType := "anonymous"
@@ -89,14 +81,12 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 	}
 
 	if !utils.StringInSlice(authType, allowedAuthTypes, false) {
-		res.Err = fmt.Sprintf("auth-type is not valid. Valid types are %s.", strings.Join(allowedAuthTypes, ", "))
-		return res
+		return fmt.Errorf("auth-type is not valid. Valid types are %s.", strings.Join(allowedAuthTypes, ", "))
 	}
 
 	if authType != "anonymous" {
 		if _, ok := req.Options["auth-user"]; !ok {
-			res.Err = fmt.Sprintf("auth-user option should be set")
-			return res
+			return fmt.Errorf("auth-user option should be set")
 		}
 
 		secretDriver = "stdin"
@@ -122,8 +112,7 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 
 		sec, err := libsecret.NewDriver(secretDriver)
 		if err != nil {
-			res.Err = err.Error()
-			return res
+			return err
 		}
 
 		for k, v := range req.Options {
@@ -135,39 +124,33 @@ func (d *volumeDriver) Create(req volume.Request) volume.Response {
 		}
 
 		if err := sec.ValidateKeys(); err != nil {
-			res.Err = err.Error()
-			return res
+			return err
 		}
 
 		vol.Auth.Config = configs
 	}
 
 	if err := d.addVolume(req.Name, &vol); err != nil {
-		res.Err = err.Error()
-		return res
+		return err
 	}
 
 	d.saveState()
 
-	return res
+	return nil
 }
 
-func (d *volumeDriver) List(req volume.Request) volume.Response {
-	var res volume.Response
-
+func (d *volumeDriver) List() (*volume.ListResponse, error) {
 	log.Info("VolumeDriver.List: volumes")
 
 	d.Lock()
 	defer d.Unlock()
 
-	res.Volumes = d.listVolumes()
-
-	return res
+	return &volume.ListResponse{
+		Volumes: d.listVolumes(),
+	}, nil
 }
 
-func (d *volumeDriver) Get(req volume.Request) volume.Response {
-	var res volume.Response
-
+func (d *volumeDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
 	log.Infof("VolumeDriver.Get: volume %s", req.Name)
 
 	d.Lock()
@@ -175,58 +158,48 @@ func (d *volumeDriver) Get(req volume.Request) volume.Response {
 
 	v, err := d.getVolume(req.Name)
 	if err != nil {
-		res.Err = err.Error()
-		return res
+		return nil, err
 	}
 
-	res.Volume = &volume.Volume{
-		Name:       req.Name,
-		Mountpoint: v.Mountpoint,
-	}
-
-	return res
+	return &volume.GetResponse{
+		Volume: &volume.Volume{
+			Name:       req.Name,
+			Mountpoint: v.Mountpoint,
+		},
+	}, nil
 }
 
-func (d *volumeDriver) Remove(req volume.Request) volume.Response {
-	var res volume.Response
-
+func (d *volumeDriver) Remove(req *volume.RemoveRequest) error {
 	log.Infof("VolumeDriver.Remove: volume %s", req.Name)
 
 	d.Lock()
 	defer d.Unlock()
 
 	if err := d.removeVolume(req.Name); err != nil {
-		res.Err = err.Error()
-		return res
+		return err
 	}
 
 	d.saveState()
 
-	return res
+	return nil
 }
 
-func (d *volumeDriver) Path(req volume.Request) volume.Response {
-	var res volume.Response
-
+func (d *volumeDriver) Path(req *volume.PathRequest) (*volume.PathResponse, error) {
 	log.Infof("VolumeDriver.Path: volume %s", req.Name)
 
 	d.RLock()
 	defer d.RUnlock()
 
-	_, err := d.getVolume(req.Name)
-	if err != nil {
-		res.Err = err.Error()
-		return res
+	if _, err := d.getVolume(req.Name);  err != nil {
+		return nil, err
 	}
 
-	res.Mountpoint = d.getPath(req.Name)
-
-	return res
+	return &volume.PathResponse{
+		Mountpoint: d.getPath(req.Name),
+	}, nil
 }
 
-func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
-	var res volume.Response
-
+func (d *volumeDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, error) {
 	log.Infof("VolumeDriver.Mount: volume %s", req.Name)
 
 	d.Lock()
@@ -234,20 +207,19 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 
 	v, err := d.getVolume(req.Name)
 	if err != nil {
-		res.Err = err.Error()
-		return res
+		return nil, err
 	}
 
 	if v.connections == 0 {
-		cloneOpts := &git.CloneOptions{
-			URL: v.URL,
+		g, err := git.New(v.URL)
+		if err != nil {
+			return nil, err
 		}
 
 		if v.Auth.Type != "anonymous" {
 			sec, err := libsecret.NewDriver(v.Auth.Driver)
 			if err != nil {
-				res.Err = err.Error()
-				return res
+				return nil, err
 			}
 
 			for k, v := range v.Auth.Config {
@@ -256,77 +228,37 @@ func (d *volumeDriver) Mount(req volume.MountRequest) volume.Response {
 
 			secr8, err := sec.GetSecret()
 			if err != nil {
-				res.Err = err.Error()
-				return res
+				return nil, err
 			}
 
-			u, err := url.Parse(v.URL)
-			if err != nil {
-				res.Err = err.Error()
-				return res
-			}
-
-			if u.Scheme == "http" || u.Scheme == "https" {
-				a := &githttp.BasicAuth{Username: v.Auth.User, Password: secr8}
-				cloneOpts.Auth = a
-			}
-
-			if u.Scheme == "ssh" {
-				var a gitssh.AuthMethod
-
-				if v.Auth.Type == "password" {
-					a = &gitssh.Password{User: v.Auth.User, Password: secr8}
-				}
-
-				if v.Auth.Type == "pubkey" {
-					a, err = gitssh.NewPublicKeys(v.Auth.User, []byte(secr8), "")
-					if err != nil {
-						res.Err = err.Error()
-						return res
-					}
-				}
-
-				a.(*gitssh.PublicKeys).HostKeyCallback = ssh.InsecureIgnoreHostKey()
-				cloneOpts.Auth = a
+			if err := g.SetAuth(v.Auth.User, v.Auth.Type, secr8); err != nil {
+				return nil, err
 			}
 		}
 
 		if err := filedir.CreateDirIfNotExist(v.Mountpoint, true, 0700); err != nil {
-			res.Err = err.Error()
-			return res
+			return nil, err
 		}
 
-		if err := cloneOpts.Validate(); err != nil {
-			res.Err = err.Error()
-			return res
-		}
-
-		r, err := git.PlainClone(v.Mountpoint, false, cloneOpts)
-		if err != nil {
-			res.Err = err.Error()
-			return res
+		if err = g.Clone(v.Mountpoint); err != nil {
+			return nil, err
 		}
 
 		if len(v.Ref) > 0 {
-			w, _ := r.Worktree()
-			hash := plumbing.NewHash(v.Ref)
-
-			w.Checkout(&git.CheckoutOptions{
-				Hash: hash,
-			})
+			if err := g.Checkout(v.Ref); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	v.connections++
 
-	res.Mountpoint = v.Mountpoint
-
-	return res
+	return &volume.MountResponse{
+		Mountpoint: v.Mountpoint,
+	}, nil
 }
 
-func (d *volumeDriver) Unmount(req volume.UnmountRequest) volume.Response {
-	var res volume.Response
-
+func (d *volumeDriver) Unmount(req *volume.UnmountRequest) error {
 	log.Infof("VolumeDriver.Unmount: volume %s", req.Name)
 
 	d.Lock()
@@ -334,30 +266,26 @@ func (d *volumeDriver) Unmount(req volume.UnmountRequest) volume.Response {
 
 	v, err := d.getVolume(req.Name)
 	if err != nil {
-		res.Err = err.Error()
-		return res
+		return err
 	}
 
 	v.connections--
 
 	if v.connections <= 0 {
 		if err := os.RemoveAll(v.Mountpoint); err != nil {
-			res.Err = err.Error()
-			return res
+			return err
 		}
 
 		v.connections = 0
 	}
 
-	return res
+	return nil
 }
 
-func (d *volumeDriver) Capabilities(req volume.Request) volume.Response {
-	var res volume.Response
+func (d *volumeDriver) Capabilities() *volume.CapabilitiesResponse {
+	log.Infof("VolumeDriver.Capabilities: volume")
 
-	log.Infof("VolumeDriver.Capabilities: volume %s", req.Name)
-
-	res.Capabilities = volume.Capability{Scope: "local"}
-
-	return res
+	return &volume.CapabilitiesResponse{
+		Capabilities: volume.Capability{Scope: "local"},
+	}
 }
