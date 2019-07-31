@@ -236,7 +236,7 @@ func (d *volumeDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, e
 			}
 		}
 
-		if err := filedir.CreateDirIfNotExist(v.Mountpoint, true, 0700); err != nil {
+		if err := filedir.CreateDirIfNotExist(v.Mountpoint, true, 0755); err != nil {
 			return nil, err
 		}
 
